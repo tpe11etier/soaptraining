@@ -55,12 +55,12 @@ def createReport(service):
 
 
 	#Make the request.
-#'''
+
 	try:
 		print service.client.service.ReportCreate(reports)
 	except suds.WebFault as e:
 		print e.fault.detail
-#'''
+
 def main():
 	service = Service()
 	createReport(service)
