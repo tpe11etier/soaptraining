@@ -29,29 +29,32 @@ class Service(object):
 		self.orgid = self.client.service.OrganizationQueryRoot()[0]
 
 def createMember(service):
-	service = service
-	member = service.client.factory.create('Member')
-	members = service.client.factory.create('ArrayOfMember')
-	contactmethod = service.client.factory.create('ContactMethod')
-	contactmethodemail = service.client.factory.create('ContactMethodEmail')
-	contactmethods = service.client.factory.create('ArrayOfContactMethod')
-	contactmethodemail.Qualifier = 'Office'
-	contactmethodemail.EmailAddress = 'tony.pelletier@varolii.com'
-	contactmethod.ContactMethodEmail = contactmethodemail
-	contactmethods.ContactMethod.append(contactmethod)
-	member.Username = 'blahblah3'
-	member.FirstName = 'blah'
-	member.LastName = 'blah'
-	member.Password = 'Blah$1Blah'
-	member.AccountEnabled = 'True'
-	member.OrganizationId = service.orgid
-	member.ContactMethods = contactmethods
-	members.Member.append(member)
-	print members
-	try:
-		print service.client.service.MemberCreate(members)
-	except suds.WebFault as e:
-		print e.fault.detail
+		service = service
+		member = service.client.factory.create('Member')
+		members = service.client.factory.create('ArrayOfMember')
+		contactmethod = service.client.factory.create('ContactMethod')
+		contactmethodemail = service.client.factory.create('ContactMethodEmail')
+		contactmethods = service.client.factory.create('ArrayOfContactMethod')
+		print contactmethod
+		print contactmethodemail
+		print contactmethods
+		contactmethodemail.Qualifier = 'Office'
+		contactmethodemail.Ordinal = 0
+		contactmethodemail.EmailAddress = raw_input('Enter Email Address: ')
+		contactmethod.ContactMethodEmail = contactmethodemail
+		contactmethods.ContactMethod.append(contactmethod)
+		member.Username = raw_input('Enter Username: ')
+		member.FirstName = raw_input('Enter First Name: ')
+		member.LastName = raw_input('Enter Last Name: ')
+		member.Password = raw_input('Enter Password: ')
+		member.AccountEnabled = 'True'
+		member.OrganizationId = service.orgid
+		member.ContactMethods = contactmethods
+		members.Member.append(member)
+		try:
+			print service.client.service.MemberCreate(members)
+		except suds.WebFault as e:
+			print e.fault.detail
 
 def main():
 	service = Service()
