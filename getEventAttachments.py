@@ -33,10 +33,7 @@ class Service(object):
 def getEventAttachments(service):
 	service = service
 
-	#Word Doc 734463
-	#No attachment Event
-
-	docs = [734376, 734463]
+	docs = [734376, 734463, 734519]
 
 	try:
 		#Create Objects
