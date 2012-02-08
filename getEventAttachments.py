@@ -40,7 +40,6 @@ def getEventAttachments(service):
 
 	try:
 		#Create Objects
-		eventresult = service.client.factory.create('ArrayOfEvent')
 		event = service.client.factory.create('ArrayOfstring')
 
 		#Enumerate list of event id's to append to ArrayOfstring and make one SOAP call.
