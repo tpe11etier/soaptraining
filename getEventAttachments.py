@@ -8,7 +8,8 @@ import csv
 import os, sys
 import zipfile
 import paramiko
-
+import datetime
+import time
 
 
 CONF = ConfigParser.ConfigParser()
@@ -36,10 +37,77 @@ class Service(object):
 		self.orgid = self.client.service.OrganizationQueryRoot()[0]
 
 
+def createReport(service):
+	#DateRange = datetime.datetime(2012, 2, 1, 00, 00, 00)
+	#DateRange_End = datetime.datetime(2012, 2, 15, 00, 00, 00)
+	delta = datetime.timedelta(days=7)
+	DateRange_End = datetime.datetime.today()
+	DateRange = DateRange_End - delta
+
+	d = str(DateRange) + ',' + str(DateRange_End)
+
+	paramsdict = {'DateRange': d}
+
+	#Object creation
+	report = service.client.factory.create('Report')
+	reports = service.client.factory.create('ArrayOfReport')
+	reportparams = service.client.factory.create('ArrayOfReportParameter')
+
+	for k,v in paramsdict.items():
+		reportparam = service.client.factory.create('ReportParameter')
+		reportparam.Name = k
+		reportparam.Value = v
+		reportparams.ReportParameter.append(reportparam)
+
+	report.OutputFormat = 'csv'
+	report.Name = 'Weekly Deliveries Report'
+	report.ZipOutput = 'False'
+	report.ReportTypeId = '9969'
+	report.TimeZoneId = '123'
+	report.ReportParameters = reportparams
+	reports.Report.append(report)
+
+
+	#Make the request.
+	try:
+		result =  service.client.service.ReportCreate(reports)
+		return  result.ResponseEntry[0].Id
+	except suds.WebFault as e:
+		print e.fault.detail
+
+
+def getReport(service, reportid):
+	reports = service.client.factory.create('ArrayOfstring')
+	reports.string.append(reportid)
+	try:
+		#time.sleep(10)
+		result = service.client.service.ReportQueryById(reports, 'True')
+		if  result.Report[0].ReportStatus == 'Completed':
+			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
+			encodedfile = result.Report[0].ReportFileArgs.ReportFileArg[0].EncodedValue
+
+			encodedstring = encodedfile.encode('utf-8')
+			str_list = []
+			for line in encodedstring:
+				line = line.rstrip()
+				str_list.append(line)
+			string = ''.join(str_list)
+			data = base64.b64decode(string)
+			outfile = open(filename, 'w')
+			outfile.write(data)
+			outfile.close()
+		else:
+			print 'Report still running...'
+			time.sleep(5)
+			filename = getReport(service,reportid)
+			print filename
+	except suds.WebFault as e:
+		print e.fault.detail
+
+
 def getEventIds(filename):
 	#Get EventId's from the 14th(15th really) which is where the report should always have it.
 
-	filename = filename
 	eventIds = []
 	finalIds = []
 	reader = csv.reader(open(filename, 'r'))
@@ -149,9 +217,11 @@ def ftpFiles():
 
 def main():
 	service = Service()
-	getEventAttachments(service)
-	zipFiles()
-	ftpFiles()
+	reportid = createReport(service)
+	#filename = getReport(service,reportid)
+	#getEventAttachments(service)
+	#zipFiles()
+	#ftpFiles()
 
 
 if __name__ == '__main__':
