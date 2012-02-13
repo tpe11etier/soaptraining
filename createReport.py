@@ -3,6 +3,9 @@
 #Imports
 import suds
 import ConfigParser
+import datetime
+import base64
+import time
 
 CONF = ConfigParser.ConfigParser()
 try:
@@ -29,8 +32,18 @@ class Service(object):
 		self.orgid = self.client.service.OrganizationQueryRoot()[0]
 
 def createReport(service):
-	paramsdict = {'EventId':'kxtttkqxk'}
-	#paramsdict = {'DateRange': '{ts \'2011-12-05 00:00:00.0\'\},\{ts \'2011-12-06 00:00:00.0\'\}'}
+	#DateRange = datetime.datetime(2012, 2, 1, 00, 00, 00)
+	#DateRange_End = datetime.datetime(2012, 2, 15, 00, 00, 00)
+	delta = datetime.timedelta(days=7)
+	DateRange_End = datetime.datetime.today()
+	DateRange = DateRange_End - delta
+
+
+	d = str(DateRange) + ',' + str(DateRange_End)
+
+
+	#paramsdict = {'DateRange': DateRange,'DateRange_End': DateRange_End}
+	paramsdict = {'DateRange': d}
 
 	#Object creation
 	report = service.client.factory.create('Report')
@@ -44,10 +57,10 @@ def createReport(service):
 		reportparam.Value = v
 		reportparams.ReportParameter.append(reportparam)
 
-	report.OutputFormat = 'excel'
-	report.Name = 'SOAP Test'
+	report.OutputFormat = 'csv'
+	report.Name = 'Weekly Deliveries Report'
 	report.ZipOutput = 'False'
-	report.ReportTypeId = '9971'
+	report.ReportTypeId = '9969'
 	report.TimeZoneId = '123'
 	report.ReportParameters = reportparams
 	reports.Report.append(report)
@@ -55,16 +68,45 @@ def createReport(service):
 
 
 	#Make the request.
-
 	try:
-		print service.client.service.ReportCreate(reports)
+		result =  service.client.service.ReportCreate(reports)
+		return  result.ResponseEntry[0].Id
 	except suds.WebFault as e:
 		print e.fault.detail
 
+
+def getReport(service, reportid):
+	reports = service.client.factory.create('ArrayOfstring')
+	reports.string.append(reportid)
+	try:
+		result = service.client.service.ReportQueryById(reports, 'True')
+		if  result.Report[0].ReportStatus == 'Completed':
+			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
+			encodedfile = result.Report[0].ReportFileArgs.ReportFileArg[0].EncodedValue
+
+			encodedstring = encodedfile.encode('utf-8')
+			str_list = []
+			for line in encodedstring:
+				line = line.rstrip()
+				str_list.append(line)
+			string = ''.join(str_list)
+			data = base64.b64decode(string)
+			print data
+			outfile = open(filename, 'w')
+			outfile.write(data)
+			outfile.close()
+		else:
+			print 'Report still running...'
+			time.sleep(5)
+			getReport(service,reportid)
+	except suds.WebFault as e:
+		print e.fault.detail
+
+
 def main():
 	service = Service()
-	createReport(service)
-
+	reportid = createReport(service)
+	getReport(service,reportid)
 
 if __name__ == '__main__':
 	main()
