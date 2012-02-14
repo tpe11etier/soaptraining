@@ -47,7 +47,6 @@ def createReport(service):
 	d = str(DateRange) + ',' + str(DateRange_End)
 
 	paramsdict = {'DateRange': d}
-
 	#Object creation
 	report = service.client.factory.create('Report')
 	reports = service.client.factory.create('ArrayOfReport')
@@ -62,7 +61,7 @@ def createReport(service):
 	report.OutputFormat = 'csv'
 	report.Name = 'Weekly Deliveries Report'
 	report.ZipOutput = 'False'
-	report.ReportTypeId = '9969'
+	report.ReportTypeId = '19845'
 	report.TimeZoneId = '123'
 	report.ReportParameters = reportparams
 	reports.Report.append(report)
@@ -71,18 +70,32 @@ def createReport(service):
 	#Make the request.
 	try:
 		result =  service.client.service.ReportCreate(reports)
-		return  result.ResponseEntry[0].Id
+	except suds.WebFault as e:
+		print e.fault.detail
+
+def queryReport(service):
+	delta = datetime.timedelta(minutes=5)
+	end = datetime.datetime.today()
+	start = end - delta
+	status = 'Completed'
+	reportTypeName = 'ED Completed Deliveries Billing Detail CSV'
+	organizationId = service.orgid
+	includeFiles = 'True'
+	index = 0
+	length = 1
+
+	try:
+		result = service.client.service.ReportQueryByDateRangeStatusReportTypeNameOrganizationId(start, end, status, reportTypeName, organizationId, includeFiles, index, length)
+		return result
 	except suds.WebFault as e:
 		print e.fault.detail
 
 
-def getReport(service, reportid):
-	reports = service.client.factory.create('ArrayOfstring')
-	reports.string.append(reportid)
+
+def getReport(service):
 	try:
-		#time.sleep(10)
-		result = service.client.service.ReportQueryById(reports, 'True')
-		if  result.Report[0].ReportStatus == 'Completed':
+		result = queryReport(service)
+		if not isinstance(result, suds.sax.text.Text):
 			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
 			encodedfile = result.Report[0].ReportFileArgs.ReportFileArg[0].EncodedValue
 
@@ -96,43 +109,50 @@ def getReport(service, reportid):
 			outfile = open(filename, 'w')
 			outfile.write(data)
 			outfile.close()
+			print filename + ' report succesfully written out...'
+			print 'Pausing for report creation...'
+			return filename
 		else:
 			print 'Report still running...'
 			time.sleep(5)
-			filename = getReport(service,reportid)
-			print filename
+			getReport(service)
 	except suds.WebFault as e:
 		print e.fault.detail
 
 
 def getEventIds(filename):
 	#Get EventId's from the 14th(15th really) which is where the report should always have it.
-
 	eventIds = []
 	finalIds = []
-	reader = csv.reader(open(filename, 'r'))
-	reader.next() #Skip Header
 
+	if filename is not None:
+		try:
+			reader = csv.reader(open(filename, 'r'))
+			reader.next() #Skip Header
+			#I only want the event id's that have attachments so I'm checking the Filename column for a value first.
+			for row in reader:
+				print row
+				if row:
+					if row[18] != '':
+						if row[17] != '':
+							eventIds.append(int(row[17]))
 
-	#I only want the event id's that have attachments so I'm checking the Filename column for a value first.
-	for row in reader:
-		if row[15] != '':
-			if row[14] != '':
-				eventIds.append(int(row[14]))
+			#The same event id will be returned numerous times so I'm only keep distinct values.
+			for id in eventIds:
+				if id not in finalIds:
+					finalIds.append(id)
+			return finalIds
+		except Exception as e:
+			print e
+	else:
+		print 'File still being written out...'
 
-	#The same event id will be returned numerous times so I'm only keep distinct values.
-	for id in eventIds:
-		if id not in finalIds:
-			finalIds.append(id)
-	return finalIds
 
 
 def getEventAttachments(service):
 	service = service
-
-	#docs = [734376, 734463, 734519,734622]
 	try:
-		eventIds = getEventIds(raw_input("Enter CSV filename: "))
+		eventIds = getEventIds(getReport(service))
 	except Exception as e:
 		print e
 		sys.exit()
@@ -189,11 +209,12 @@ def getEventAttachments(service):
 
 def zipFiles():
 	print '\nCreating archive...\n'
-	zf = zipfile.ZipFile('attachments.zip', mode='w')
+	file = os.path.join('files', 'attachments.zip')
+	zf = zipfile.ZipFile(file, mode='w')
 	try:
 		for file in os.listdir('files'):
 			print file
-			zf.write(file)
+			zf.write(os.path.join('files', file))
 	finally:
 		print '\nDone zipping attachments\n.'
 		zf.close()
@@ -203,11 +224,11 @@ def ftpFiles():
 	try:
 		ssh = paramiko.SSHClient()
 		ssh.set_missing_host_key_policy(
-		paramiko.AutoAddPolicy())
+			paramiko.AutoAddPolicy())
 		ssh.connect('127.0.0.1', port=22, username='tpelletier', password='tpelletier')
 		ftp = ssh.open_sftp()
 		print 'Starting file transfer...'
-		ftp.put('attachments.zip','incoming/attachments.zip', None)
+		ftp.put(os.path.join('files','attachments.zip'),'incoming/attachments.zip', None)
 		print 'File attachments.zip successfully transferred.'
 		ftp.close()
 	except Exception as e:
@@ -217,11 +238,10 @@ def ftpFiles():
 
 def main():
 	service = Service()
-	reportid = createReport(service)
-	#filename = getReport(service,reportid)
-	#getEventAttachments(service)
-	#zipFiles()
-	#ftpFiles()
+	createReport(service)
+	getEventAttachments(service)
+	zipFiles()
+	ftpFiles()
 
 
 if __name__ == '__main__':
