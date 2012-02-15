@@ -74,19 +74,27 @@ def createReport(service):
 		print e.fault.detail
 
 def queryReport(service):
-	delta = datetime.timedelta(minutes=5)
-	end = datetime.datetime.today()
+	delta = datetime.timedelta(minutes=10)
+	end = datetime.datetime.now() + delta
 	start = end - delta
+	end = str(end)
+	start = str(start)
 	status = 'Completed'
 	reportTypeName = 'ED Completed Deliveries Billing Detail CSV'
 	organizationId = service.orgid
 	includeFiles = 'True'
-	index = 0
+	#index = 0
 	length = 1
 
 	try:
+		index = service.client.service.ReportQueryByDateRangeStatusReportTypeNameOrganizationIdLength(start, end, status, reportTypeName, organizationId)
+		if index > 0:
+			index -= 1
 		result = service.client.service.ReportQueryByDateRangeStatusReportTypeNameOrganizationId(start, end, status, reportTypeName, organizationId, includeFiles, index, length)
-		return result
+		if result:
+			return result
+		else:
+			print 'Nothing found...'
 	except suds.WebFault as e:
 		print e.fault.detail
 
@@ -94,8 +102,10 @@ def queryReport(service):
 
 def getReport(service):
 	try:
+		time.sleep(10)
 		result = queryReport(service)
 		if not isinstance(result, suds.sax.text.Text):
+			print 'Boom!'
 			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
 			encodedfile = result.Report[0].ReportFileArgs.ReportFileArg[0].EncodedValue
 
@@ -120,10 +130,13 @@ def getReport(service):
 		print e.fault.detail
 
 
-def getEventIds(filename):
+def getEventIds(service):
+	service = service
+
 	#Get EventId's from the 14th(15th really) which is where the report should always have it.
 	eventIds = []
 	finalIds = []
+	filename = getReport(service)
 
 	if filename is not None:
 		try:
@@ -146,13 +159,15 @@ def getEventIds(filename):
 			print e
 	else:
 		print 'File still being written out...'
+		print 'Dumping out...'
+		sys.exit()
 
 
 
 def getEventAttachments(service):
 	service = service
 	try:
-		eventIds = getEventIds(getReport(service))
+		eventIds = getEventIds(service)
 	except Exception as e:
 		print e
 		sys.exit()
@@ -214,7 +229,8 @@ def zipFiles():
 	try:
 		for file in os.listdir('files'):
 			print file
-			zf.write(os.path.join('files', file))
+			if file:
+				zf.write(os.path.join('files', file))
 	finally:
 		print '\nDone zipping attachments\n.'
 		zf.close()
