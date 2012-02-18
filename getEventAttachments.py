@@ -6,10 +6,12 @@ import ConfigParser
 import base64
 import csv
 import os, sys
+import shutil
 import zipfile
 import paramiko
 import datetime
 import time
+import logging
 
 
 CONF = ConfigParser.ConfigParser()
@@ -20,6 +22,9 @@ except IOError as e:
 
 #WSDL Url
 url = 'https://developer4.envoyww.com/WebService/EPAPI_1.0/wsdl.wsdl'
+
+logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s', filename=CONF.get("Logging", "FileName"), filemode='w')
+#logging.basicConfig(level=CONF.get("Logging", "Level"),format='%(asctime)s %(levelname)s %(message)s', filename=CONF.get("Logging", "FileName"), filemode='w')
 
 class Service(object):
 	def __init__(self):
@@ -37,10 +42,29 @@ class Service(object):
 		self.orgid = self.client.service.OrganizationQueryRoot()[0]
 
 
+
+def cleanup():
+	try:
+		if not os.path.exists("files"):
+			print 'Creating "files" directory...'
+			logging.info('Creating "files" directory...')
+			os.makedirs("files")
+			print '"files" directory successfully created...'
+			logging.info('"files" directory successfully created...')
+		else:
+			shutil.rmtree("files")
+			print 'Deleting "files" directory...'
+			logging.info('Deleting "files" directory...')
+			os.makedirs("files")
+			print '"files" directory successfully created...'
+			logging.info('"files" directory successfully created...')
+	except Exception as e:
+		print e
+
+
 def createReport(service):
-	#DateRange = datetime.datetime(2012, 2, 1, 00, 00, 00)
-	#DateRange_End = datetime.datetime(2012, 2, 15, 00, 00, 00)
-	delta = datetime.timedelta(days=7)
+	logging.info('Report creation process started...')
+	delta = datetime.timedelta(days=15)
 	DateRange_End = datetime.datetime.today()
 	DateRange = DateRange_End - delta
 
@@ -72,29 +96,30 @@ def createReport(service):
 		result =  service.client.service.ReportCreate(reports)
 	except suds.WebFault as e:
 		print e.fault.detail
+		sys.exit()
 
 def queryReport(service):
-	delta = datetime.timedelta(minutes=10)
-	end = datetime.datetime.now() + delta
-	start = end - delta
-	end = str(end)
-	start = str(start)
+	deltastart = datetime.timedelta(minutes=5)
+	deltaend = datetime.timedelta(minutes=5)
+	end = datetime.datetime.now() + deltaend
+	start = datetime.datetime.now() - deltastart
+
 	status = 'Completed'
 	reportTypeName = 'ED Completed Deliveries Billing Detail CSV'
 	organizationId = service.orgid
 	includeFiles = 'True'
-	#index = 0
 	length = 1
 
 	try:
 		index = service.client.service.ReportQueryByDateRangeStatusReportTypeNameOrganizationIdLength(start, end, status, reportTypeName, organizationId)
-		if index > 0:
-			index -= 1
-		result = service.client.service.ReportQueryByDateRangeStatusReportTypeNameOrganizationId(start, end, status, reportTypeName, organizationId, includeFiles, index, length)
-		if result:
-			return result
+		if index is 0:
+			print 'Report not found.  Still running?'
+			time.sleep(5)
+			getEventIds(service)
 		else:
-			print 'Nothing found...'
+			index -= 1
+			result = service.client.service.ReportQueryByDateRangeStatusReportTypeNameOrganizationId(start, end, status, reportTypeName, organizationId, includeFiles, index, length)
+			return result
 	except suds.WebFault as e:
 		print e.fault.detail
 
@@ -102,10 +127,8 @@ def queryReport(service):
 
 def getReport(service):
 	try:
-		time.sleep(10)
 		result = queryReport(service)
 		if not isinstance(result, suds.sax.text.Text):
-			print 'Boom!'
 			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
 			encodedfile = result.Report[0].ReportFileArgs.ReportFileArg[0].EncodedValue
 
@@ -119,13 +142,10 @@ def getReport(service):
 			outfile = open(filename, 'w')
 			outfile.write(data)
 			outfile.close()
+			shutil.copyfile(filename, os.path.join('files', filename))
 			print filename + ' report succesfully written out...'
-			print 'Pausing for report creation...'
+			logging.info(filename + ' report succesfully written out...')
 			return filename
-		else:
-			print 'Report still running...'
-			time.sleep(5)
-			getReport(service)
 	except suds.WebFault as e:
 		print e.fault.detail
 
@@ -145,6 +165,7 @@ def getEventIds(service):
 			#I only want the event id's that have attachments so I'm checking the Filename column for a value first.
 			for row in reader:
 				print row
+				logging.info(row)
 				if row:
 					if row[18] != '':
 						if row[17] != '':
@@ -159,7 +180,6 @@ def getEventIds(service):
 			print e
 	else:
 		print 'File still being written out...'
-		print 'Dumping out...'
 		sys.exit()
 
 
@@ -211,28 +231,32 @@ def getEventAttachments(service):
 				str_list.append(line)
 			string = ''.join(str_list)
 			data = base64.b64decode(string)
-			if not os.path.exists("files"):
-				os.makedirs("files")
+
 
 			outfile = open(os.path.join('files',filename), 'wb')
 			outfile.write(data)
 			outfile.close()
 			print filename + ' successfully written out!'
+			logging.info(filename + ' successfully written out!')
 	except suds.WebFault as e:
 		print e.fault.detail
 
 
 def zipFiles():
 	print '\nCreating archive...\n'
+	logging.info('\nCreating archive...\n')
 	file = os.path.join('files', 'attachments.zip')
 	zf = zipfile.ZipFile(file, mode='w')
 	try:
 		for file in os.listdir('files'):
-			print file
-			if file:
+			if file == 'attachments.zip':
+				pass
+			else:
+				print file
 				zf.write(os.path.join('files', file))
 	finally:
 		print '\nDone zipping attachments\n.'
+		logging.info('\nDone zipping attachments\n.')
 		zf.close()
 
 
@@ -244,8 +268,10 @@ def ftpFiles():
 		ssh.connect('127.0.0.1', port=22, username='tpelletier', password='tpelletier')
 		ftp = ssh.open_sftp()
 		print 'Starting file transfer...'
+		logging.info('Starting file transfer...')
 		ftp.put(os.path.join('files','attachments.zip'),'incoming/attachments.zip', None)
 		print 'File attachments.zip successfully transferred.'
+		logging.info('File attachments.zip successfully transferred.')
 		ftp.close()
 	except Exception as e:
 		print e
@@ -255,6 +281,7 @@ def ftpFiles():
 def main():
 	service = Service()
 	createReport(service)
+	time.sleep(3)
 	getEventAttachments(service)
 	zipFiles()
 	ftpFiles()
