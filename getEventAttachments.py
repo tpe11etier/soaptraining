@@ -9,8 +9,7 @@ import os, sys
 import shutil
 import zipfile
 import paramiko
-import datetime
-import time
+import datetime, time
 import logging
 
 
@@ -93,7 +92,7 @@ def createReport(service):
 
 	#Make the request.
 	try:
-		result =  service.client.service.ReportCreate(reports)
+		service.client.service.ReportCreate(reports)
 	except suds.WebFault as e:
 		print e.fault.detail
 		sys.exit()
