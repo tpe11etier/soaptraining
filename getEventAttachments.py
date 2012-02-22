@@ -1,5 +1,13 @@
 #!/usr/bin/env python
 
+"""
+This program will do SOAP calls to accomplish the following.
+	- Makes a SOAP request to create a report
+	- Makes a SOAP request to query report in last x minutes and grabs the latest one if more than one found then
+	  write it out to the file system.
+	- Parses out
+"""
+
 #Imports
 import suds
 import ConfigParser
@@ -13,6 +21,7 @@ import datetime, time
 import logging
 
 
+
 CONF = ConfigParser.ConfigParser()
 try:
 	CONF.read("soap.props")
@@ -23,7 +32,7 @@ except IOError as e:
 url = 'https://developer4.envoyww.com/WebService/EPAPI_1.0/wsdl.wsdl'
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s', filename=CONF.get("Logging", "FileName"), filemode='w')
-#logging.basicConfig(level=CONF.get("Logging", "Level"),format='%(asctime)s %(levelname)s %(message)s', filename=CONF.get("Logging", "FileName"), filemode='w')
+
 
 class Service(object):
 	def __init__(self):
@@ -63,7 +72,7 @@ def cleanup():
 
 def createReport(service):
 	logging.info('Report creation process started...')
-	delta = datetime.timedelta(days=15)
+	delta = datetime.timedelta(days=30)
 	DateRange_End = datetime.datetime.today()
 	DateRange = DateRange_End - delta
 
@@ -92,42 +101,23 @@ def createReport(service):
 
 	#Make the request.
 	try:
-		service.client.service.ReportCreate(reports)
+		result = service.client.service.ReportCreate(reports)
+		return result.ResponseEntry[0].Id
 	except suds.WebFault as e:
 		print e.fault.detail
 		sys.exit()
 
-def queryReport(service):
-	deltastart = datetime.timedelta(minutes=5)
-	deltaend = datetime.timedelta(minutes=5)
-	end = datetime.datetime.now() + deltaend
-	start = datetime.datetime.now() - deltastart
 
-	status = 'Completed'
-	reportTypeName = 'ED Completed Deliveries Billing Detail CSV'
-	organizationId = service.orgid
-	includeFiles = 'True'
-	length = 1
+
+def getReport(service, reportId):
+	reportIds = service.client.factory.create('ArrayOfstring')
+	reportIds.string.append(reportId)
 
 	try:
-		index = service.client.service.ReportQueryByDateRangeStatusReportTypeNameOrganizationIdLength(start, end, status, reportTypeName, organizationId)
-		if index is 0:
-			print 'Report not found.  Still running?'
-			time.sleep(5)
-			getEventIds(service)
-		else:
-			index -= 1
-			result = service.client.service.ReportQueryByDateRangeStatusReportTypeNameOrganizationId(start, end, status, reportTypeName, organizationId, includeFiles, index, length)
-			return result
-	except suds.WebFault as e:
-		print e.fault.detail
+		result = service.client.service.ReportQueryById(reportIds, 'True')
 
-
-
-def getReport(service):
-	try:
-		result = queryReport(service)
-		if not isinstance(result, suds.sax.text.Text):
+		if result.Report[0].ReportStatus == 'Completed':
+			print 'Report is in Completed state.'
 			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
 			encodedfile = result.Report[0].ReportFileArgs.ReportFileArg[0].EncodedValue
 
@@ -144,18 +134,25 @@ def getReport(service):
 			shutil.copyfile(filename, os.path.join('files', filename))
 			print filename + ' report succesfully written out...'
 			logging.info(filename + ' report succesfully written out...')
-			return filename
+			return result
+		else:
+			print 'Report is still in Processing state...'
+			return None
+
 	except suds.WebFault as e:
 		print e.fault.detail
 
 
-def getEventIds(service):
+
+
+
+def getEventIds(service, filename):
 	service = service
+	filename = filename
 
 	#Get EventId's from the 14th(15th really) which is where the report should always have it.
 	eventIds = []
 	finalIds = []
-	filename = getReport(service)
 
 	if filename is not None:
 		try:
@@ -183,10 +180,11 @@ def getEventIds(service):
 
 
 
-def getEventAttachments(service):
+def getEventAttachments(service, filename):
 	service = service
+	filename = filename
 	try:
-		eventIds = getEventIds(service)
+		eventIds = getEventIds(service,filename)
 	except Exception as e:
 		print e
 		sys.exit()
@@ -279,9 +277,19 @@ def ftpFiles():
 
 def main():
 	service = Service()
-	createReport(service)
-	time.sleep(3)
-	getEventAttachments(service)
+	cleanup()
+	reportId = createReport(service)
+	try:
+		result = getReport(service,reportId)
+		while result is None:
+			time.sleep(3)
+			result = getReport(service,reportId)
+		else:
+			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
+			getEventAttachments(service, filename)
+	except suds.WebFault as e:
+		print e
+
 	zipFiles()
 	ftpFiles()
 
