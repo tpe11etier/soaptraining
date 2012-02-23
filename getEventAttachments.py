@@ -3,9 +3,11 @@
 """
 This program will do SOAP calls to accomplish the following.
 	- Makes a SOAP request to create a report
-	- Makes a SOAP request to query report in last x minutes and grabs the latest one if more than one found then
-	  write it out to the file system.
-	- Parses out
+	- Makes a SOAP request to query report using the report id from the prior call and writes the csv out to the file
+	  system.
+	- Parses the csv to grab the event id's then uses those to get the files to write out.  Only unique event id's will
+	  be used as well as only rows that contain an attachment.
+	- Once the files are completed being written out, they are zipped and sent to an ftp site.
 """
 
 #Imports
@@ -52,6 +54,8 @@ class Service(object):
 
 
 def cleanup():
+	#Creating a new files directory before each run to make sure old data is cleaned out.
+	#TODO Make this date based and leave the old directories around
 	try:
 		if not os.path.exists("files"):
 			print 'Creating "files" directory...'
@@ -70,20 +74,20 @@ def cleanup():
 		print e
 
 
-def createReport(service):
+def create_report(service):
 	logging.info('Report creation process started...')
 	delta = datetime.timedelta(days=30)
 	DateRange_End = datetime.datetime.today()
 	DateRange = DateRange_End - delta
-
 	d = str(DateRange) + ',' + str(DateRange_End)
-
 	paramsdict = {'DateRange': d}
+
 	#Object creation
 	report = service.client.factory.create('Report')
 	reports = service.client.factory.create('ArrayOfReport')
 	reportparams = service.client.factory.create('ArrayOfReportParameter')
 
+	#Iterate the dictionary to create a new ReportParameter.  Depending on the report run, this might be more than the one.
 	for k,v in paramsdict.items():
 		reportparam = service.client.factory.create('ReportParameter')
 		reportparam.Name = k
@@ -109,7 +113,7 @@ def createReport(service):
 
 
 
-def getReport(service, reportId):
+def get_report(service, reportId):
 	reportIds = service.client.factory.create('ArrayOfstring')
 	reportIds.string.append(reportId)
 
@@ -146,7 +150,7 @@ def getReport(service, reportId):
 
 
 
-def getEventIds(service, filename):
+def get_event_ids(service, filename):
 	service = service
 	filename = filename
 
@@ -180,11 +184,11 @@ def getEventIds(service, filename):
 
 
 
-def getEventAttachments(service, filename):
+def get_event_attachments(service, filename):
 	service = service
 	filename = filename
 	try:
-		eventIds = getEventIds(service,filename)
+		eventIds = get_event_ids(service,filename)
 	except Exception as e:
 		print e
 		sys.exit()
@@ -239,7 +243,7 @@ def getEventAttachments(service, filename):
 		print e.fault.detail
 
 
-def zipFiles():
+def zip_files():
 	print '\nCreating archive...\n'
 	logging.info('\nCreating archive...\n')
 	file = os.path.join('files', 'attachments.zip')
@@ -251,10 +255,12 @@ def zipFiles():
 			else:
 				print file
 				zf.write(os.path.join('files', file))
-	finally:
+
 		print '\nDone zipping attachments\n.'
 		logging.info('\nDone zipping attachments\n.')
 		zf.close()
+	except IOError as e:
+		print e
 
 
 def ftpFiles():
@@ -278,19 +284,19 @@ def ftpFiles():
 def main():
 	service = Service()
 	cleanup()
-	reportId = createReport(service)
+	reportId = create_report(service)
 	try:
-		result = getReport(service,reportId)
+		result = get_report(service,reportId)
 		while result is None:
 			time.sleep(3)
-			result = getReport(service,reportId)
+			result = get_report(service,reportId)
 		else:
 			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
-			getEventAttachments(service, filename)
+			get_event_attachments(service, filename)
 	except suds.WebFault as e:
 		print e
 
-	zipFiles()
+	zip_files()
 	ftpFiles()
 
 
