@@ -74,9 +74,9 @@ def cleanup():
 		print e
 
 
-def create_report(service):
+def create_report(service, days, format, name, zipoutput, reporttypeid, timezoneid):
 	logging.info('Report creation process started...')
-	delta = datetime.timedelta(days=30)
+	delta = datetime.timedelta(days=days)
 	DateRange_End = datetime.datetime.today()
 	DateRange = DateRange_End - delta
 	d = str(DateRange) + ',' + str(DateRange_End)
@@ -94,11 +94,11 @@ def create_report(service):
 		reportparam.Value = v
 		reportparams.ReportParameter.append(reportparam)
 
-	report.OutputFormat = 'csv'
-	report.Name = 'Weekly Deliveries Report'
-	report.ZipOutput = 'False'
-	report.ReportTypeId = '19845'
-	report.TimeZoneId = '123'
+	report.OutputFormat = format
+	report.Name = name
+	report.ZipOutput = zipoutput
+	report.ReportTypeId = reporttypeid
+	report.TimeZoneId = timezoneid
 	report.ReportParameters = reportparams
 	reports.Report.append(report)
 
@@ -150,8 +150,7 @@ def get_report(service, reportId):
 
 
 
-def get_event_ids(service, filename):
-	service = service
+def get_event_ids(filename):
 	filename = filename
 
 	#Get EventId's from the 14th(15th really) which is where the report should always have it.
@@ -188,7 +187,7 @@ def get_event_attachments(service, filename):
 	service = service
 	filename = filename
 	try:
-		eventIds = get_event_ids(service,filename)
+		eventIds = get_event_ids(filename)
 	except Exception as e:
 		print e
 		sys.exit()
@@ -246,9 +245,9 @@ def get_event_attachments(service, filename):
 def zip_files():
 	print '\nCreating archive...\n'
 	logging.info('\nCreating archive...\n')
-	file = os.path.join('files', 'attachments.zip')
-	zf = zipfile.ZipFile(file, mode='w')
 	try:
+		file = os.path.join('files', 'attachments.zip')
+		zf = zipfile.ZipFile(file, mode='w')
 		for file in os.listdir('files'):
 			if file == 'attachments.zip':
 				pass
@@ -263,12 +262,12 @@ def zip_files():
 		print e
 
 
-def ftpFiles():
+def ftpFiles(server, port, login, password):
 	try:
 		ssh = paramiko.SSHClient()
 		ssh.set_missing_host_key_policy(
 			paramiko.AutoAddPolicy())
-		ssh.connect('127.0.0.1', port=22, username='tpelletier', password='tpelletier')
+		ssh.connect(server, port=port, username=login, password=password)
 		ftp = ssh.open_sftp()
 		print 'Starting file transfer...'
 		logging.info('Starting file transfer...')
@@ -284,7 +283,7 @@ def ftpFiles():
 def main():
 	service = Service()
 	cleanup()
-	reportId = create_report(service)
+	reportId = create_report(service, 30, 'csv', 'Weekly Deliveries Report', 'False', '19845', '123')
 	try:
 		result = get_report(service,reportId)
 		while result is None:
@@ -297,7 +296,7 @@ def main():
 		print e
 
 	zip_files()
-	ftpFiles()
+	ftpFiles('127.0.0.1', 22, 'tpelletier', 'tpelletier')
 
 
 if __name__ == '__main__':
