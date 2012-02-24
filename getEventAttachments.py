@@ -31,7 +31,7 @@ except IOError as e:
 	print 'File %s not found!' % e
 
 #WSDL Url
-url = 'https://developer4.envoyww.com/WebService/EPAPI_1.0/wsdl.wsdl'
+URL = 'https://developer4.envoyww.com/WebService/EPAPI_1.0/wsdl.wsdl'
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s', filename=CONF.get("Logging", "FileName"), filemode='w')
 
@@ -41,7 +41,7 @@ class Service(object):
 		"""
         Creates header information required for any SOAP request.
         """
-		self.client = suds.client.Client(url)
+		self.client = suds.client.Client(URL)
 		header = self.client.factory.create('AuthHeader')
 		header.Domain = CONF.get("Auth Header", "domain")
 		header.UserId = CONF.get("Auth Header", "userid")
@@ -52,24 +52,28 @@ class Service(object):
 		self.orgid = self.client.service.OrganizationQueryRoot()[0]
 
 
+def get_date():
+	today = datetime.date.today()  #Get today's date as a datetime type
+	return today.isoformat()
+
 
 def cleanup():
 	#Creating a new files directory before each run to make sure old data is cleaned out.
-	#TODO Make this date based and leave the old directories around
+	dir = 'files_%s' % get_date()
 	try:
-		if not os.path.exists("files"):
-			print 'Creating "files" directory...'
-			logging.info('Creating "files" directory...')
-			os.makedirs("files")
-			print '"files" directory successfully created...'
-			logging.info('"files" directory successfully created...')
+		if not os.path.exists(dir):
+			print 'Creating "%s" directory...' % dir
+			logging.info('Creating "%s" directory...' % dir)
+			os.makedirs('%s' % dir)
+			print '%s directory successfully created...' % dir
+			logging.info('%s directory successfully created...' % dir)
 		else:
-			shutil.rmtree("files")
-			print 'Deleting "files" directory...'
-			logging.info('Deleting "files" directory...')
-			os.makedirs("files")
-			print '"files" directory successfully created...'
-			logging.info('"files" directory successfully created...')
+			shutil.rmtree("%s" % dir)
+			print 'Deleting "%s" directory...' % dir
+			logging.info('Deleting %s directory...' % dir)
+			os.makedirs('%s' % dir)
+			print '%s directory successfully created...' % dir
+			logging.info('%s directory successfully created...' % dir)
 	except Exception as e:
 		print e
 
@@ -104,16 +108,13 @@ def create_report(service, days, format, name, zipoutput, reporttypeid, timezone
 
 
 	#Make the request.
-	try:
-		result = service.client.service.ReportCreate(reports)
-		return result.ResponseEntry[0].Id
-	except suds.WebFault as e:
-		print e.fault.detail
-		sys.exit()
+	result = service.client.service.ReportCreate(reports)
+	return result.ResponseEntry[0].Id
 
 
 
 def get_report(service, reportId):
+	dir = 'files_%s' % get_date()
 	reportIds = service.client.factory.create('ArrayOfstring')
 	reportIds.string.append(reportId)
 
@@ -135,7 +136,7 @@ def get_report(service, reportId):
 			outfile = open(filename, 'w')
 			outfile.write(data)
 			outfile.close()
-			shutil.copyfile(filename, os.path.join('files', filename))
+			shutil.copyfile(filename, os.path.join('%s', filename)% dir)
 			print filename + ' report succesfully written out...'
 			logging.info(filename + ' report succesfully written out...')
 			return result
@@ -184,6 +185,7 @@ def get_event_ids(filename):
 
 
 def get_event_attachments(service, filename):
+	dir = 'files_%s' % get_date()
 	service = service
 	filename = filename
 	try:
@@ -233,7 +235,7 @@ def get_event_attachments(service, filename):
 			data = base64.b64decode(string)
 
 
-			outfile = open(os.path.join('files',filename), 'wb')
+			outfile = open(os.path.join('%s',filename) % dir, 'wb')
 			outfile.write(data)
 			outfile.close()
 			print filename + ' successfully written out!'
@@ -243,17 +245,18 @@ def get_event_attachments(service, filename):
 
 
 def zip_files():
+	dir = 'files_%s' % get_date()
 	print '\nCreating archive...\n'
 	logging.info('\nCreating archive...\n')
 	try:
-		file = os.path.join('files', 'attachments.zip')
+		file = os.path.join('%s' % dir, 'attachments.zip')
 		zf = zipfile.ZipFile(file, mode='w')
-		for file in os.listdir('files'):
+		for file in os.listdir('%s' % dir):
 			if file == 'attachments.zip':
 				pass
 			else:
 				print file
-				zf.write(os.path.join('files', file))
+				zf.write(os.path.join('%s', file) % dir)
 
 		print '\nDone zipping attachments\n.'
 		logging.info('\nDone zipping attachments\n.')
@@ -263,6 +266,7 @@ def zip_files():
 
 
 def ftpFiles(server, port, login, password):
+	dir = 'files_%s' % get_date()
 	try:
 		ssh = paramiko.SSHClient()
 		ssh.set_missing_host_key_policy(
@@ -271,7 +275,7 @@ def ftpFiles(server, port, login, password):
 		ftp = ssh.open_sftp()
 		print 'Starting file transfer...'
 		logging.info('Starting file transfer...')
-		ftp.put(os.path.join('files','attachments.zip'),'incoming/attachments.zip', None)
+		ftp.put(os.path.join('%s','attachments.zip') % dir,'incoming/attachments.zip', None)
 		print 'File attachments.zip successfully transferred.'
 		logging.info('File attachments.zip successfully transferred.')
 		ftp.close()
@@ -281,9 +285,22 @@ def ftpFiles(server, port, login, password):
 
 
 def main():
-	service = Service()
+	#Create Service which creates SUDS client to make calls.
+	try:
+		service = Service()
+	except Exception as e:
+		print 'Invalid url supplied. %s. %s' % (URL, e)
+		sys.exit()
+
 	cleanup()
-	reportId = create_report(service, 30, 'csv', 'Weekly Deliveries Report', 'False', '19845', '123')
+	#Create the report
+	try:
+		reportId = create_report(service, 30, 'csv', 'Weekly Deliveries Report', 'False', '19845', '123')
+	except suds.WebFault as e:
+		print e.fault.detail
+		sys.exit()
+
+	#Get the report.  This *should* technically never fail since the report id is being passed in from the prior call.
 	try:
 		result = get_report(service,reportId)
 		while result is None:
@@ -293,9 +310,12 @@ def main():
 			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
 			get_event_attachments(service, filename)
 	except suds.WebFault as e:
-		print e
+		print e.fault.detail
 
+	#Zip all files in the files directory.
 	zip_files()
+
+	#FTP Files to given location.
 	ftpFiles('127.0.0.1', 22, 'tpelletier', 'tpelletier')
 
 
