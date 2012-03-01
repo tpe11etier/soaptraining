@@ -293,6 +293,7 @@ def main():
 		sys.exit()
 
 	cleanup()
+
 	#Create the report
 	try:
 		reportId = create_report(service, 30, 'csv', 'Weekly Deliveries Report', 'False', '19845', '123')
@@ -302,15 +303,23 @@ def main():
 
 	#Get the report.  This *should* technically never fail since the report id is being passed in from the prior call.
 	try:
+		counter = 0
 		result = get_report(service,reportId)
 		while result is None:
-			time.sleep(3)
-			result = get_report(service,reportId)
+			if counter == 5:
+				print 'Something went wrong.  Giving up.'
+				print 'Check the NOC for result.'
+				sys.exit()
+			else:
+				time.sleep(5)
+				result = get_report(service,reportId)
+			counter += 1
 		else:
 			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
 			get_event_attachments(service, filename)
 	except suds.WebFault as e:
 		print e.fault.detail
+
 
 	#Zip all files in the files directory.
 	zip_files()
