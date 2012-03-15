@@ -209,6 +209,7 @@ def get_event_attachments(service, filename):
 		#False if you don't want attachments in a response document.
 		eventresult = service.client.service.EventQueryById(event, 'true')
 
+
 		#Get number of event's returned
 		numofevents = len(eventresult.Event)
 
@@ -316,7 +317,11 @@ def main():
 			counter += 1
 		else:
 			filename =  result.Report[0].ReportFileArgs.ReportFileArg[0].UserFileName
-			get_event_attachments(service, filename)
+			try:
+				get_event_attachments(service, filename)
+			except Exception as e:
+				print 'Report returned no results.  Exiting...'
+				sys.exit()
 	except suds.WebFault as e:
 		print e.fault.detail
 
